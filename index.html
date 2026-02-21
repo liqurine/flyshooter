@@ -1,0 +1,1683 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Fly Shooter Test (Parts Collision)</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin:0; height:100%; background:#0b0f17; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif; }
+    body { overscroll-behavior: none; }
+    :root{
+  color-scheme: dark;
+  /* Panel toggle tab size (requested: 50% smaller) */
+  --tabW: 14px;
+  --tabH: 48px;
+  --tabInset: 6px;
+  --panelRadius: 14px;
+}
+html, body { margin:0; height:100%; background:#0b0f17; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif; }
+body { overscroll-behavior: none; }
+
+#wrap { height:100%; }
+#left { height:100%; display:flex; align-items:center; justify-content:center; padding:10px; touch-action:none; }
+#gameArea{ position:relative; display:inline-block; }
+
+canvas { display:block; background:#050812; border:1px solid rgba(255,255,255,.12); border-radius: var(--panelRadius); touch-action:none; }
+
+/* Overlay panel (covers the game area except the tab strip) */
+#ui{
+  position:absolute;
+  top: var(--tabInset);
+  bottom: var(--tabInset);
+  /* When OPEN: tab stays on the LEFT of the panel, so reserve tab width on the left */
+  left: var(--tabW);
+  right: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow:auto;
+  border-radius: calc(var(--panelRadius) - 2px);
+  background: rgba(10,14,22,.86);
+  border:1px solid rgba(255,255,255,.10);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform .24s ease, opacity .18s ease, visibility .18s ease;
+  will-change: transform;
+  z-index: 20;
+}
+/* When CLOSED: fully hide the panel (no shadow / no scrollbars visible) */
+#ui.closed{
+  transform: translateX(110%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ChromaRoll-style tab inside the game area */
+.panelTab{
+  position:absolute;
+  /* Default = CLOSED: show the tab on the RIGHT edge of the game area */
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--tabW);
+  height: var(--tabH);
+  border-radius: 14px 0 0 14px;
+  background: rgba(46,120,255,.96);
+  border: 1px solid rgba(255,255,255,.28);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; user-select:none;
+  box-shadow: 0 10px 26px rgba(0,0,0,.48), 0 0 0 2px rgba(46,120,255,.18);
+  z-index: 30;
+}
+.panelTab:hover{ background: rgba(46,120,255,1); }
+.panelTab:active{ transform: translateY(-50%) scale(.985); }
+
+.panelTab .tri{
+  width:0; height:0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 8px solid rgba(255,255,255,.98); /* pointing LEFT by default (closed state) */
+  margin-right: 1px;
+  transition: transform .18s ease;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,.35));
+}
+/* When panel is OPEN, point RIGHT to indicate "close" */
+#ui:not(.closed) ~ #panelTab .tri{
+  transform: rotate(180deg);
+  margin-right: 0;
+}
+
+/* When panel is OPEN, move the tab to the LEFT edge of the panel */
+#ui:not(.closed) ~ #panelTab{
+  left: 0;
+  right: auto;
+  border-radius: 0 14px 14px 0;
+}
+    h1 { font-size:14px; margin: 4px 0 10px; font-weight:700; opacity:.9; }
+    h2 { font-size:12px; margin: 10px 0 6px; opacity:.9; }
+    .row { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap: wrap; }
+    .row label { flex: 1.6; font-size:12px; opacity:.85; }
+    .row .pair { display:flex; gap:8px; align-items:center; }
+    .row input[type="number"], .row input[type="text"]{
+      width: 140px; padding:6px 8px; border-radius:10px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(0,0,0,.22); color:#fff;
+    }
+    .row input.short { width: 96px; }
+    .row input[type="checkbox"]{ transform: translateY(1px); }
+    button {
+      background: rgba(255,255,255,.08);
+      color: #fff; border:1px solid rgba(255,255,255,.14);
+      border-radius:10px; padding:8px 10px; cursor:pointer; font-size:12px;
+    }
+    button:hover { background: rgba(255,255,255,.12); }
+    .pill { display:inline-block; padding:3px 8px; border:1px solid rgba(255,255,255,.16); border-radius:999px; font-size:11px; opacity:.9;}
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .small { font-size:11px; opacity:.8; line-height:1.35; }
+    .kv { display:grid; grid-template-columns: 1fr auto; gap:6px 10px; margin-top:8px; }
+    .kv div { font-size:12px; opacity:.85; }
+    .kv div.val { opacity: 1; }
+    hr { border:0; border-top:1px solid rgba(255,255,255,.10); margin:12px 0; }
+    .hint { font-size:11px; opacity:.7; }
+
+    /* number input spinner 제거 */
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <div id="left"><div id="gameArea">
+    <canvas id="c"></canvas>
+    <div id="ui" class="closed">
+
+    <h2>화면/영역 크기(수기 입력)</h2>
+    <div class="hint">폭/높이(px). 내부 계산은 유저 화면(1.0) 기준 정규화.</div>
+
+    <div class="row">
+      <label>1) 유저 화면 (W×H)</label>
+      <div class="pair">
+        <input id="userW" class="short" type="number" step="1" min="100" value="1080" />
+        <input id="userH" class="short" type="number" step="1" min="100" value="1920" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>2) 디스플레이 가능 (W×H)</label>
+      <div class="pair">
+        <input id="dispW" class="short" type="number" step="1" min="100" value="1280" />
+        <input id="dispH" class="short" type="number" step="1" min="100" value="1920" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>3) 적기 활동 가능 (W×H)</label>
+      <div class="pair">
+        <input id="actW" class="short" type="number" step="1" min="100" value="1480" />
+        <input id="actH" class="short" type="number" step="1" min="100" value="2120" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>하단(C1,D1) 출현 구역 범위 (0~1)</label>
+      <input id="bottomSpawnRange" type="number" step="0.01" min="0" max="1" value="0.50" />
+    </div>
+
+    <div class="row">
+      <button id="applyArea">영역 적용</button>
+
+      </div>
+
+    <div class="row">
+      <label>디버그 오버레이</label>
+      <input id="dbg" type="checkbox" />
+    </div>
+
+    <hr />
+
+    <h2>조작/스폰</h2>
+    <div class="row">
+      <label>드래그 딜레이(무게감) (0~0.95)</label>
+      <input id="follow" type="number" step="0.01" min="0" max="0.95" value="0.80" />
+    </div>
+
+    <div class="row">
+      <label>그룹 출현 인터벌 (초)</label>
+      <input id="groupInterval" type="number" step="0.01" min="0.01" value="2.00" />
+    </div>
+
+    <div class="row">
+      <label>그룹 내 스폰 인터벌 (초)</label>
+      <input id="memberGap" type="number" step="0.01" min="0" value="0.60" />
+    </div>
+
+    <div class="row">
+      <label>그룹 크기 (기체 수)</label>
+      <input id="groupSize" type="number" step="1" min="1" max="20" value="7" />
+    </div>
+
+    <div class="row">
+      <label>적기 속도 (정규화/초)</label>
+      <input id="enemySpeed" type="number" step="0.001" min="0.001" value="0.500" />
+    </div>
+
+    <div class="row">
+      <label>중앙 편향 (0~1)</label>
+      <input id="bias" type="number" step="0.01" min="0" max="1" value="0.25" />
+    </div>
+
+    <div class="row">
+      <label>벡터 경로 샘플 수 (디버그)</label>
+      <input id="curveSamples" type="number" step="1" min="10" max="200" value="40" />
+    </div>
+
+    <hr />
+
+    <h2>전투 파라미터</h2>
+
+    <div class="row">
+      <label>플레이어 충돌 반지름 (정규화)</label>
+      <input id="playerR" type="number" step="0.001" min="0.001" value="0.030" />
+    </div>
+
+    <div class="row">
+      <label>적기 충돌 반지름 (정규화)</label>
+      <input id="enemyR" type="number" step="0.001" min="0.001" value="0.035" />
+    </div>
+
+    <div class="row">
+      <label>플레이어 공격 속도 (초/발)</label>
+      <input id="playerFire" type="number" step="0.01" min="0.02" value="0.12" />
+    </div>
+
+    <div class="row">
+      <label>적 탄속 (정규화/초)</label>
+      <input id="enemyBulletSpeed" type="number" step="0.01" min="0.05" value="0.15" />
+    </div>
+
+    <div class="row">
+      <label>피해 쿨타임 (초)</label>
+      <input id="hurtCD" type="number" step="0.05" min="0" value="0.50" />
+    </div>
+
+    <div class="row">
+      <label>리스폰 무적 (초)</label>
+      <input id="respawnIFrames" type="number" step="0.1" min="0" value="1.0" />
+    </div>
+
+    <div class="row">
+      <label>파츠 간격 (정규화) — 기본 0</label>
+      <input id="partGap" type="number" step="0.001" min="0" value="0" />
+    </div>
+    <div class="hint">첫 파츠는 본체에 딱 붙고, 2번째부터 간격이 적용됩니다. (파츠가 화면 밖으로 나가면 안 되므로 플레이어 이동 범위가 자동으로 좁혀집니다.)</div>
+
+    <hr />
+
+    <h2>아이템(골드/박스) 이동</h2>
+
+    <div class="row">
+      <label>왕복 폭 (정규화, 끝~끝)</label>
+      <input id="itemZigzagWidth" type="number" step="0.01" min="0.05" max="1.0" value="0.33" />
+    </div>
+
+    <div class="row">
+      <label>하강 속도 (정규화/초)</label>
+      <input id="itemFallSpeed" type="number" step="0.01" min="0.01" value="0.10" />
+    </div>
+
+    <div class="row">
+      <label>좌우 이동 속도 (정규화/초)</label>
+      <input id="itemMoveSpeed" type="number" step="0.01" min="0.01" value="0.10" />
+    </div>
+
+    <hr />
+
+    <div class="small">
+      <div><span class="mono">드랍</span>: 마지막 스폰 적기가 <b>플레이어 투사체</b>로 Die하면 1개 드랍 (골드 80% / 박스 20%).</div>
+      <div><span class="mono">박스 색상</span>: 빨→주→노→초→파→남→보 순환. 먹으면 같은 색 파츠(HP1)로 부착.</div>
+      <div><span class="mono">파츠 피격</span>: 적 탄/적 기체와 충돌 시 파츠만 파괴(본체 HP 변화 없음).</div>
+    </div>
+
+    <div class="kv">
+      <div>골드</div><div id="gold" class="val mono">0</div>
+      <div>플레이어 HP</div><div id="pHp" class="val mono">3</div>
+      <div>적기 수</div><div id="enemyCount" class="val mono">0</div>
+      <div>스폰 예약 수</div><div id="scheduledCount" class="val mono">0</div>
+      <div>플레이어 탄 수</div><div id="bulletCount" class="val mono">0</div>
+      <div>적 탄 수</div><div id="ebulletCount" class="val mono">0</div>
+      <div>아이템 수</div><div id="itemCount" class="val mono">0</div>
+      <div>파츠(R/L)</div><div id="parts" class="val mono">0/0</div>
+      <div>FPS</div><div id="fps" class="val mono">0</div>
+      <div>드래그</div><div id="dragState" class="val mono">OFF</div>
+      <div>그룹 스킵(차단)</div><div id="skipped" class="val mono">0</div>
+      <div>카메라 X</div><div id="camX" class="val mono">0.00</div>
+      <div>마지막 케이스</div><div id="lastCase" class="val mono">-</div>
+      <div>최근 에러</div><div id="errLine" class="val mono">-</div>
+    </div>
+  
+    </div>
+    <div class="panelTab" id="panelTab" aria-label="패널 열기/닫기" title="옵션 열기/닫기"><div class="tri"></div></div>
+  </div></div>
+</div>
+
+<script>
+(() => {
+  // ========= Utils =========
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const hypot = (x, y) => Math.hypot(x, y);
+  const finite = (v) => Number.isFinite(v);
+
+  // 빨주노초파남보
+  const PART_COLORS = [
+    "#ff4d4d", // red
+    "#ff9f1a", // orange
+    "#ffd93d", // yellow
+    "#2ecc71", // green
+    "#3498db", // blue
+    "#1f3a93", // navy
+    "#9b59b6", // purple
+  ];
+
+  // ========= Canvas =========
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d", { alpha: true });
+
+  function resizeCanvas() {
+    const left = document.getElementById("left");
+    const pad = 22;
+    const w = left.clientWidth - pad;
+    const h = left.clientHeight - pad;
+    const targetAR = 9/16;
+
+    let cw = w, ch = w / targetAR;
+    if (ch > h) { ch = h; cw = h * targetAR; }
+
+    canvas.width  = Math.floor(cw * devicePixelRatio);
+    canvas.height = Math.floor(ch * devicePixelRatio);
+    canvas.style.width = Math.floor(cw) + "px";
+    canvas.style.height = Math.floor(ch) + "px";
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+    // regenerate starfield for current canvas size
+    initStarfield();
+  }
+  window.addEventListener("resize", resizeCanvas);
+  const cssW = () => parseFloat(canvas.style.width);
+  const cssH = () => parseFloat(canvas.style.height);
+
+
+// ========= Background (Starfield) =========
+const bg = {
+  layers: [],
+  // subtle deterministic-ish palette for stars (very mild tint)
+  colors: [
+    [255,255,255],
+    [220,235,255],
+    [200,220,255],
+    [255,245,220],
+  ],
+};
+
+// Initialize canvas sizes & background now that bg is ready
+resizeCanvas();
+
+function randRange(a,b){ return a + (b-a)*Math.random(); }
+
+function initStarfield() {
+  const w = canvas.width / devicePixelRatio;
+  const h = canvas.height / devicePixelRatio;
+  if (w <= 0 || h <= 0) return;
+
+  // counts scale with visible area, clamped to keep perf stable
+  const area = w*h;
+  const base = clamp(Math.round(area / 6500), 80, 420);
+
+  bg.layers = [
+    // far dust: slow, tiny, very faint
+    { speed: 0.020, count: Math.round(base*0.55), rMin: 0.4, rMax: 1.0, aMin: 0.05, aMax: 0.12 },
+    // mid stars
+    { speed: 0.045, count: Math.round(base*0.35), rMin: 0.7, rMax: 1.6, aMin: 0.08, aMax: 0.18 },
+    // near sparkles: a few brighter but still subtle
+    { speed: 0.085, count: Math.round(base*0.10), rMin: 1.0, rMax: 2.2, aMin: 0.10, aMax: 0.25 },
+  ].map(L => {
+    const stars = [];
+    for (let i=0;i<L.count;i++){
+      const c = bg.colors[(Math.random()*bg.colors.length)|0];
+      stars.push({
+        x: Math.random(), y: Math.random(),
+        r: randRange(L.rMin, L.rMax),
+        a: randRange(L.aMin, L.aMax),
+        // pick a mild tint
+        cr: c[0], cg: c[1], cb: c[2],
+      });
+    }
+    return { ...L, stars };
+  });
+}
+
+function drawSpaceBackground(w, h, t) {
+  // base subtle vertical gradient (very dark)
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0.0, "rgba(4,6,16,1)");
+  g.addColorStop(1.0, "rgba(2,3,10,1)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // star layers
+  // Move stars downward to simulate "forward flight".
+  for (const L of bg.layers) {
+    const dy = (t * L.speed) % 1;
+    for (const s of L.stars) {
+      const yy = (s.y + dy) % 1;
+      const x = s.x * w;
+      const y = yy * h;
+
+      // avoid harsh points: draw tiny soft circles
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(${s.cr},${s.cg},${s.cb},${s.a})`;
+      ctx.arc(x, y, s.r, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+  // ========= UI =========
+  const ui = {
+    dbg: document.getElementById("dbg"),
+    userW: document.getElementById("userW"),
+    userH: document.getElementById("userH"),
+    dispW: document.getElementById("dispW"),
+    dispH: document.getElementById("dispH"),
+    actW: document.getElementById("actW"),
+    actH: document.getElementById("actH"),
+    bottomSpawnRange: document.getElementById("bottomSpawnRange"),
+    applyArea: document.getElementById("applyArea"),
+    reset: document.getElementById("reset"),
+    spawnGroup: document.getElementById("spawnGroup"),
+    follow: document.getElementById("follow"),
+    groupInterval: document.getElementById("groupInterval"),
+    memberGap: document.getElementById("memberGap"),
+    groupSize: document.getElementById("groupSize"),
+    enemySpeed: document.getElementById("enemySpeed"),
+    bias: document.getElementById("bias"),
+    curveSamples: document.getElementById("curveSamples"),
+    playerR: document.getElementById("playerR"),
+    enemyR: document.getElementById("enemyR"),
+    playerFire: document.getElementById("playerFire"),
+    enemyBulletSpeed: document.getElementById("enemyBulletSpeed"),
+    hurtCD: document.getElementById("hurtCD"),
+    respawnIFrames: document.getElementById("respawnIFrames"),
+    partGap: document.getElementById("partGap"),
+    itemZigzagWidth: document.getElementById("itemZigzagWidth"),
+    itemFallSpeed: document.getElementById("itemFallSpeed"),
+    itemMoveSpeed: document.getElementById("itemMoveSpeed"),
+
+    gold: document.getElementById("gold"),
+    pHp: document.getElementById("pHp"),
+    enemyCount: document.getElementById("enemyCount"),
+    scheduledCount: document.getElementById("scheduledCount"),
+    bulletCount: document.getElementById("bulletCount"),
+    ebulletCount: document.getElementById("ebulletCount"),
+    itemCount: document.getElementById("itemCount"),
+    parts: document.getElementById("parts"),
+    fps: document.getElementById("fps"),
+    dragState: document.getElementById("dragState"),
+    skipped: document.getElementById("skipped"),
+    camX: document.getElementById("camX"),
+    lastCase: document.getElementById("lastCase"),
+    errLine: document.getElementById("errLine"),
+  };
+  const panelEl = document.getElementById("ui");
+  const panelTab = document.getElementById("panelTab");
+
+
+  // input 중간상태 보호 (소수 입력 튐 방지)
+  const num = (el, fallback) => {
+    const s = String(el.value ?? "").trim();
+    if (s === "" || s === "-" || s === "." || s === "-." || s.endsWith(".")) return fallback;
+    const v = Number(s);
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const int = (el, fallback) => {
+    const s = String(el.value ?? "").trim();
+    if (s === "" || s === "-" ) return fallback;
+    const v = parseInt(s, 10);
+    return Number.isFinite(v) ? v : fallback;
+  };
+
+  function sanitizeInputs() {
+    ui.follow.value = clamp(num(ui.follow, 0.70), 0, 0.95).toFixed(2);
+    ui.groupInterval.value = Math.max(0.01, num(ui.groupInterval, 1.00)).toFixed(2);
+    ui.memberGap.value = Math.max(0, num(ui.memberGap, 0.40)).toFixed(2);
+    ui.groupSize.value = clamp(int(ui.groupSize, 7), 1, 20);
+    ui.enemySpeed.value = Math.max(0.001, num(ui.enemySpeed, 0.500)).toFixed(3);
+    ui.bias.value = clamp(num(ui.bias, 0.25), 0, 1).toFixed(2);
+    ui.curveSamples.value = clamp(int(ui.curveSamples, 40), 10, 200);
+
+    ui.playerR.value = Math.max(0.001, num(ui.playerR, 0.030)).toFixed(3);
+    ui.enemyR.value = Math.max(0.001, num(ui.enemyR, 0.035)).toFixed(3);
+    ui.playerFire.value = Math.max(0.02, num(ui.playerFire, 0.12)).toFixed(2);
+    ui.enemyBulletSpeed.value = Math.max(0.05, num(ui.enemyBulletSpeed, 0.50)).toFixed(2);
+    ui.hurtCD.value = Math.max(0, num(ui.hurtCD, 0.50)).toFixed(2);
+    ui.respawnIFrames.value = Math.max(0, num(ui.respawnIFrames, 1.0)).toFixed(1);
+
+    ui.partGap.value = Math.max(0, num(ui.partGap, 0)).toFixed(3);
+
+    ui.itemZigzagWidth.value = clamp(num(ui.itemZigzagWidth, 0.33), 0.05, 1.0).toFixed(2);
+    ui.itemFallSpeed.value = Math.max(0.01, num(ui.itemFallSpeed, 0.10)).toFixed(2);
+    ui.itemMoveSpeed.value = Math.max(0.01, num(ui.itemMoveSpeed, 0.10)).toFixed(2);
+
+    ui.bottomSpawnRange.value = clamp(num(ui.bottomSpawnRange, 0.50), 0, 1).toFixed(2);
+
+    ui.userW.value = Math.max(100, int(ui.userW, 1080));
+    ui.userH.value = Math.max(100, int(ui.userH, 1920));
+    ui.dispW.value = Math.max(100, int(ui.dispW, 1280));
+    ui.dispH.value = Math.max(100, int(ui.dispH, 1920));
+    ui.actW.value  = Math.max(100, int(ui.actW, 1480));
+    ui.actH.value  = Math.max(100, int(ui.actH, 2120));
+  }
+
+  // ✅ blur/change/enter에서만 포맷 확정 (소수 입력 문제 해결)
+  const LIVE_KEYS = [
+    "follow","groupInterval","memberGap","groupSize","enemySpeed","bias","curveSamples",
+    "playerR","enemyR","playerFire","enemyBulletSpeed","hurtCD","respawnIFrames","partGap",
+    "itemZigzagWidth","itemFallSpeed","itemMoveSpeed",
+    "bottomSpawnRange",
+    "userW","userH","dispW","dispH","actW","actH"
+  ];
+  for (const k of LIVE_KEYS) {
+    ui[k].addEventListener("change", sanitizeInputs);
+    ui[k].addEventListener("blur", sanitizeInputs);
+    ui[k].addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); e.target.blur(); sanitizeInputs(); }
+    });
+  }
+  sanitizeInputs();
+
+  // ========= Error overlay =========
+  const err = { msg: "", time: 0, stack: "" };
+  function setErr(e) {
+    const m = (e && e.message) ? e.message : String(e);
+    err.msg = m;
+    err.stack = (e && e.stack) ? e.stack : "";
+    err.time = 5.0;
+    ui.errLine.textContent = m.slice(0, 64);
+  }
+  window.addEventListener("error", (ev) => {
+    setErr(new Error(`${ev.message} @${ev.filename}:${ev.lineno}:${ev.colno}`));
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    setErr(new Error(`PromiseRejection: ${String(ev.reason)}`));
+  });
+
+  // ========= Camera =========
+  const camera = { x: 0, edge: 0.20, followStrength: 10 };
+
+  // ========= Areas =========
+  const area = {
+    dispXMin: -0.45, dispXMax: 1.45, dispYMin: 0, dispYMax: 1,
+    actXMin: -0.80,  actXMax: 1.80,  actYMin: -0.20, actYMax: 1.20,
+  };
+  function camMin() { return area.dispXMin; }
+  function camMax() { return area.dispXMax - 1; }
+  function worldToScreen(p) { return { x: p.x - camera.x, y: p.y }; }
+  function screenToWorld(p) { return { x: p.x + camera.x, y: p.y }; }
+
+  function recomputeAreas() {
+    sanitizeInputs();
+    const userW = int(ui.userW, 1080);
+    const userH = int(ui.userH, 1920);
+    const dispW = int(ui.dispW, 1280);
+    const dispH = int(ui.dispH, 1920);
+    const actW  = int(ui.actW, 1480);
+    const actH  = int(ui.actH, 2120);
+
+    const rxDisp = dispW / userW;
+    const ryDisp = dispH / userH;
+    const rxAct  = actW  / userW;
+    const ryAct  = actH  / userH;
+
+    const dx = (rxDisp - 1) * 0.5;
+    const dy = (ryDisp - 1) * 0.5;
+    area.dispXMin = 0 - dx; area.dispXMax = 1 + dx;
+    area.dispYMin = 0 - dy; area.dispYMax = 1 + dy;
+
+    const ax = (rxAct - 1) * 0.5;
+    const ay = (ryAct - 1) * 0.5;
+    area.actXMin = 0 - ax; area.actXMax = 1 + ax;
+    area.actYMin = 0 - ay; area.actYMax = 1 + ay;
+
+    camera.x = clamp(camera.x, camMin(), camMax());
+  }
+  ui.applyArea.addEventListener("click", recomputeAreas);
+
+  // ========= 48 CASES =========
+  const CASES = [
+    {s:"A1", v:"C", e:"A1"}, {s:"A1", v:"C", e:"B1"}, {s:"A1", v:"C", e:"B2"}, {s:"A1", v:"C", e:"D1"},
+    {s:"A1", v:"D", e:"A1"}, {s:"A1", v:"D", e:"A2"}, {s:"A1", v:"D", e:"C1"}, {s:"A1", v:"D", e:"B1"},
+    {s:"A2", v:"B", e:"A2"}, {s:"A2", v:"B", e:"C1"}, {s:"A2", v:"B", e:"C2"}, {s:"A2", v:"B", e:"D2"},
+    {s:"A2", v:"D", e:"A1"}, {s:"A2", v:"D", e:"A2"}, {s:"A2", v:"D", e:"B1"}, {s:"A2", v:"D", e:"C1"},
+    {s:"B1", v:"C", e:"A1"}, {s:"B1", v:"C", e:"B1"}, {s:"B1", v:"C", e:"B2"}, {s:"B1", v:"C", e:"D1"},
+    {s:"B1", v:"D", e:"A1"}, {s:"B1", v:"D", e:"A2"}, {s:"B1", v:"D", e:"B1"}, {s:"B1", v:"D", e:"C1"},
+    {s:"B2", v:"A", e:"B2"}, {s:"B2", v:"A", e:"C2"}, {s:"B2", v:"A", e:"D1"}, {s:"B2", v:"A", e:"D2"},
+    {s:"B2", v:"C", e:"A1"}, {s:"B2", v:"C", e:"B1"}, {s:"B2", v:"C", e:"B2"}, {s:"B2", v:"C", e:"D1"},
+    {s:"C1", v:"B", e:"A2"}, {s:"C1", v:"B", e:"C1"}, {s:"C1", v:"B", e:"C2"}, {s:"C1", v:"B", e:"D2"},
+    {s:"C1", v:"D", e:"A2"}, {s:"C1", v:"D", e:"A1"}, {s:"C1", v:"D", e:"B1"}, {s:"C1", v:"D", e:"C1"},
+    {s:"D1", v:"A", e:"B2"}, {s:"D1", v:"A", e:"C2"}, {s:"D1", v:"A", e:"D1"}, {s:"D1", v:"A", e:"D2"},
+    {s:"D1", v:"C", e:"A1"}, {s:"D1", v:"C", e:"B1"}, {s:"D1", v:"C", e:"B2"}, {s:"D1", v:"C", e:"D1"},
+  ];
+
+  function splitX() { return (area.dispXMin + area.dispXMax) * 0.5; }
+  function splitY() { return (area.dispYMin + area.dispYMax) * 0.5; }
+
+  function sampleOnSegment(seg, t, opts={}) {
+    t = clamp(t, 0, 1);
+    const xmin = area.actXMin, xmax = area.actXMax;
+    const ymin = area.actYMin, ymax = area.actYMax;
+    const sx = splitX();
+    const sy = splitY();
+
+    if (opts && opts.isSpawn && (seg === "C1" || seg === "D1")) {
+      const r = clamp(num(ui.bottomSpawnRange, 0.50), 0, 1);
+      t = t * r;
+    }
+
+    switch(seg){
+      case "A1": return { x: lerp(xmin, sx, t), y: ymin };
+      case "B1": return { x: lerp(sx, xmax, t), y: ymin };
+      case "A2": return { x: xmin, y: lerp(ymin, sy, t) };
+      case "C1": return { x: xmin, y: lerp(sy, ymax, t) };
+      case "B2": return { x: xmax, y: lerp(ymin, sy, t) };
+      case "D1": return { x: xmax, y: lerp(sy, ymax, t) };
+      case "C2": return { x: lerp(xmin, sx, t), y: ymax };
+      case "D2": return { x: lerp(sx, xmax, t), y: ymax };
+    }
+    return { x: 0.5, y: 0.5 };
+  }
+
+  function exitDirFromSeg(seg) {
+    switch(seg){
+      case "A1":
+      case "B1": return { x: 0, y: -1 };
+      case "C2":
+      case "D2": return { x: 0, y:  1 };
+      case "A2":
+      case "C1": return { x: -1, y: 0 };
+      case "B2":
+      case "D1": return { x:  1, y: 0 };
+      default: return { x: 0, y: 1 };
+    }
+  }
+
+  function isOutsideActivity(p, buf = 0.10) {
+    return (p.x < area.actXMin - buf || p.x > area.actXMax + buf || p.y < area.actYMin - buf || p.y > area.actYMax + buf);
+  }
+
+  function quadBounds(q, inset = 0.06) {
+    const x0 = area.dispXMin, x1 = area.dispXMax;
+    const y0 = area.dispYMin, y1 = area.dispYMax;
+    const mx = (x0 + x1) * 0.5;
+    const my = (y0 + y1) * 0.5;
+    const ix = (x1 - x0) * inset;
+    const iy = (y1 - y0) * inset;
+
+    switch(q){
+      case "A": return { x0: x0 + ix, y0: y0 + iy, x1: mx - ix, y1: my - iy };
+      case "B": return { x0: mx + ix, y0: y0 + iy, x1: x1 - ix, y1: my - iy };
+      case "C": return { x0: x0 + ix, y0: my + iy, x1: mx - ix, y1: y1 - iy };
+      case "D": return { x0: mx + ix, y0: my + iy, x1: x1 - ix, y1: y1 - iy };
+      default:  return { x0: x0 + ix, y0: y0 + iy, x1: x1 - ix, y1: y1 - iy };
+    }
+  }
+
+  function biasedPointIn(bounds, bias) {
+    const u1 = Math.random(), u2 = Math.random();
+    const cx = (bounds.x0 + bounds.x1) * 0.5;
+    const cy = (bounds.y0 + bounds.y1) * 0.5;
+
+    const xU = lerp(bounds.x0, bounds.x1, u1);
+    const yU = lerp(bounds.y0, bounds.y1, u2);
+
+    const shrink = 0.65;
+    const hx = (bounds.x1 - bounds.x0) * 0.5 * shrink;
+    const hy = (bounds.y1 - bounds.y0) * 0.5 * shrink;
+    const xC = lerp(cx - hx, cx + hx, u1);
+    const yC = lerp(cy - hy, cy + hy, u2);
+
+    return { x: lerp(xU, xC, bias), y: lerp(yU, yC, bias) };
+  }
+
+  function hermite(p0, m0, p1, m1, t) {
+    const t2 = t*t, t3 = t2*t;
+    const h00 =  2*t3 - 3*t2 + 1;
+    const h10 =      t3 - 2*t2 + t;
+    const h01 = -2*t3 + 3*t2;
+    const h11 =      t3 -    t2;
+    return {
+      x: h00*p0.x + h10*m0.x + h01*p1.x + h11*m1.x,
+      y: h00*p0.y + h10*m0.y + h01*p1.y + h11*m1.y,
+    };
+  }
+
+  function buildVectorPath(start, via, end, samples) {
+    const tScale = 0.65;
+    const mStart = { x: (via.x - start.x) * tScale, y: (via.y - start.y) * tScale };
+    const mVia   = { x: (end.x - start.x) * 0.5 * tScale, y: (end.y - start.y) * 0.5 * tScale };
+    const mEnd   = { x: (end.x - via.x) * tScale, y: (end.y - via.y) * tScale };
+
+    const pts = [];
+    for (let i=0;i<=samples;i++){
+      const t = i / samples;
+      pts.push(hermite(start, mStart, via, mVia, t));
+    }
+    for (let i=1;i<=samples;i++){
+      const t = i / samples;
+      pts.push(hermite(via, mVia, end, mEnd, t));
+    }
+
+    const cum = [0];
+    let total = 0;
+    for (let i=1;i<pts.length;i++){
+      total += hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+      cum.push(total);
+    }
+
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i=0;i<pts.length;i++){
+      const d = hypot(pts[i].x - via.x, pts[i].y - via.y);
+      if (d < bestD) { bestD = d; bestI = i; }
+    }
+    const viaDist = cum[bestI];
+
+    return {
+      start, via, end,
+      pts, cum, totalLen: total, viaDist,
+      posAtDist(s) {
+        if (total <= 1e-6) return { x: start.x, y: start.y };
+        s = clamp(s, 0, total);
+        let lo = 0, hi = cum.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (cum[mid] < s) lo = mid + 1; else hi = mid;
+        }
+        const i = Math.max(1, lo);
+        const s0 = cum[i-1], s1 = cum[i];
+        const tt = (s1 - s0) > 1e-6 ? (s - s0) / (s1 - s0) : 0;
+        return { x: lerp(pts[i-1].x, pts[i].x, tt), y: lerp(pts[i-1].y, pts[i].y, tt) };
+      }
+    };
+  }
+
+  function makePathFromCase(c) {
+    const bias = num(ui.bias, 0.25);
+    const samples = clamp(int(ui.curveSamples, 40), 10, 200);
+
+    for (let tries = 0; tries < 40; tries++) {
+      const start = sampleOnSegment(c.s, Math.random(), { isSpawn: true });
+      const via = biasedPointIn(quadBounds(c.v), bias);
+      const end = sampleOnSegment(c.e, Math.random(), { isSpawn: false });
+      const d1 = hypot(via.x - start.x, via.y - start.y);
+      const d2 = hypot(end.x - via.x, end.y - via.y);
+      if (d1 < 0.10 || d2 < 0.10) continue;
+      return buildVectorPath(start, via, end, samples);
+    }
+
+    const start = sampleOnSegment(c.s, Math.random(), { isSpawn: true });
+    const via = biasedPointIn(quadBounds(c.v), bias);
+    const end = sampleOnSegment(c.e, Math.random(), { isSpawn: false });
+    return buildVectorPath(start, via, end, samples);
+  }
+
+  // ========= State =========
+  const HARD_CAP = 100;
+  const state = {
+    enemies: [],
+    pBullets: [],
+    eBullets: [],
+    items: [],
+    scheduledSpawns: [],
+    skippedGroups: 0,
+    nextGroupId: 1,
+
+    time: 0,
+    paused: false,
+
+    // background time (always advances; continues on game over / pause)
+    bgTime: 0,
+
+    groupAcc: 0,
+
+    playerHp: 3,
+    gameOver: false,
+    respawnCountdown: 0,
+    respawnILeft: 0,
+    hurtCooldown: 0,
+
+    gold: 0,
+    lastCaseStr: "-",
+    _fpsAcc: 0, _fpsFrames: 0, fps: 0,
+  };
+
+  // ========= Player / Input =========
+  const player = { sx: 0.5, sy: 0.82, tsx: 0.5, tsy: 0.82, alive: true };
+
+  // ✅ 파츠 슬롯: {colorIndex, hp}
+  const parts = {
+    right: [],
+    left: [],
+    nextSide: "R",
+  };
+
+  let nextBoxColor = 0;
+
+  const drag = { active:false, pointerId:null, lastX:0, lastY:0 };
+  function setDragState(on) {
+    ui.dragState.textContent = on ? "ON" : "OFF";
+    drag.active = on;
+    if (!on) drag.pointerId = null;
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (state.paused) return;
+    canvas.setPointerCapture(e.pointerId);
+    drag.pointerId = e.pointerId;
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+    setDragState(true);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (state.paused) return;
+    if (!drag.active || e.pointerId !== drag.pointerId) return;
+    const dxPx = e.clientX - drag.lastX;
+    const dyPx = e.clientY - drag.lastY;
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+
+    const w = cssW(), h = cssH();
+    if (!finite(w) || !finite(h) || w <= 0 || h <= 0) return;
+    player.tsx = player.tsx + dxPx / w;
+    player.tsy = player.tsy + dyPx / h;
+  });
+  function endPointer(e) {
+    if (e.pointerId === drag.pointerId) {
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      setDragState(false);
+    }
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointerleave", endPointer);
+
+  // ========= Combat =========
+  const weapon = { cooldown: 0, bulletSpeed: 1.35, damage: 1 };
+
+  function getCoreAndPartWorldPositions() {
+    const coreW = screenToWorld({ x: player.sx, y: player.sy });
+    const coreR = Math.max(0.001, num(ui.playerR, 0.030));
+    const partR = coreR * 0.80;
+    const gap = Math.max(0, num(ui.partGap, 0));
+
+    const dxFirst = coreR + partR;      // 첫 파츠 중심까지 거리
+    const dxStep  = 2*partR + gap;      // 2번째부터 추가되는 거리(지름+간격)
+
+    const rightPos = [];
+    const leftPos  = [];
+
+    for (let i=0;i<parts.right.length;i++){
+      const slot = parts.right[i];
+      rightPos.push({
+        side: "R",
+        index: i,
+        slot,
+        x: coreW.x + dxFirst + i*dxStep,
+        y: coreW.y,
+        r: partR
+      });
+    }
+    for (let i=0;i<parts.left.length;i++){
+      const slot = parts.left[i];
+      leftPos.push({
+        side: "L",
+        index: i,
+        slot,
+        x: coreW.x - (dxFirst + i*dxStep),
+        y: coreW.y,
+        r: partR
+      });
+    }
+
+    return { coreW, coreR, partR, gap, dxFirst, dxStep, rightPos, leftPos };
+  }
+
+  // ✅ 파츠 포함 동적 클램프: 디스플레이 가능 영역 밖으로 파츠가 나가지 않도록 sx 범위를 계산
+  function clampPlayerWithParts() {
+    // sy는 기존처럼 유저 화면 기준(0~1)에 두고, sx만 디스플레이 가능 영역에 맞춰 동적으로 좁힌다.
+    const { coreR, partR, dxFirst, dxStep } = getCoreAndPartWorldPositions();
+
+    const nR = parts.right.length;
+    const nL = parts.left.length;
+
+    // 각 방향의 “본체 중심부터 끝(반지름 포함)” 돌출 거리
+    const rightReach = (nR <= 0) ? coreR : (dxFirst + (nR-1)*dxStep + partR);
+    const leftReach  = (nL <= 0) ? coreR : (dxFirst + (nL-1)*dxStep + partR);
+
+    // core world x가 만족해야 하는 범위
+    const coreXMin = area.dispXMin + leftReach;
+    const coreXMax = area.dispXMax - rightReach;
+
+    // 화면좌표(sx) = coreWorldX - camera.x
+    let sxMin = coreXMin - camera.x;
+    let sxMax = coreXMax - camera.x;
+
+    // 만약 파츠가 너무 많아 한 화면에 안 들어오면, 중앙에 고정(안정성)
+    if (sxMin > sxMax) {
+      const mid = (sxMin + sxMax) * 0.5;
+      sxMin = mid;
+      sxMax = mid;
+    }
+
+    player.tsx = clamp(player.tsx, sxMin, sxMax);
+    player.sx  = clamp(player.sx,  sxMin, sxMax);
+
+    // y는 유저화면(0~1) 기준만 유지
+    player.tsy = clamp(player.tsy, 0, 1);
+    player.sy  = clamp(player.sy,  0, 1);
+  }
+
+  function fireBulletFrom(worldPos) {
+    state.pBullets.push({
+      x: worldPos.x, y: worldPos.y,
+      vx: 0, vy: -weapon.bulletSpeed,
+      r: 0.006, dmg: 1,
+      ttl: 6.0
+    });
+  }
+
+  function firePlayerBullets() {
+    const { coreW, coreR, rightPos, leftPos } = getCoreAndPartWorldPositions();
+
+    const muzzleOffsetCore = coreR + 0.010;
+    fireBulletFrom({ x: coreW.x, y: coreW.y - muzzleOffsetCore });
+
+    const muzzleExtra = 0.006;
+    for (const p of rightPos) fireBulletFrom({ x: p.x, y: p.y - (p.r + muzzleExtra) });
+    for (const p of leftPos)  fireBulletFrom({ x: p.x, y: p.y - (p.r + muzzleExtra) });
+  }
+
+  function fireEnemyBullet(fromWorld, targetWorld) {
+    const spd = Math.max(0.05, num(ui.enemyBulletSpeed, 0.50));
+    const dx = targetWorld.x - fromWorld.x;
+    const dy = targetWorld.y - fromWorld.y;
+    const len = Math.max(1e-6, Math.hypot(dx, dy));
+    state.eBullets.push({
+      x: fromWorld.x, y: fromWorld.y,
+      vx: (dx/len)*spd, vy: (dy/len)*spd,
+      r: 0.006, dmg: 1,
+      ttl: 7.0
+    });
+  }
+
+  function circleHit(a, ar, b, br) {
+    if (!a || !b) return false;
+    ar = Number.isFinite(ar) ? ar : 0;
+    br = Number.isFinite(br) ? br : 0;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    const rr = ar + br;
+    return (dx*dx + dy*dy) <= rr*rr;
+  }
+
+  function resetParts() {
+    parts.right.length = 0;
+    parts.left.length = 0;
+    parts.nextSide = "R";
+  }
+
+  function enterGameOver() {
+    state.gameOver = true;
+    state.respawnCountdown = 3.0;
+
+    state.pBullets.length = 0;
+    state.eBullets.length = 0;
+    state.items.length = 0;
+    state.scheduledSpawns.length = 0;
+    state.groupAcc = 0;
+
+    // ✅ 게임오버 시 파츠 리셋
+    resetParts();
+
+    player.alive = false;
+  }
+
+  function respawnPlayer() {
+    player.sx = 0.5; player.sy = 0.84;
+    player.tsx = player.sx; player.tsy = player.sy;
+    state.playerHp = 3;
+    state.hurtCooldown = 0;
+    state.respawnILeft = Math.max(0, num(ui.respawnIFrames, 1.0));
+    state.gameOver = false;
+    state.respawnCountdown = 0;
+    player.alive = true;
+
+    // ✅ 리스폰 시 파츠는 “본체만” 상태 유지
+    resetParts();
+  }
+
+  function applyPlayerHit() {
+    if (state.gameOver) return;
+    if (!player.alive) return;
+    if (state.respawnILeft > 0) return;
+    if (state.hurtCooldown > 0) return;
+
+    state.playerHp -= 1;
+    state.hurtCooldown = Math.max(0, num(ui.hurtCD, 0.50));
+
+    if (state.playerHp <= 0) {
+      state.playerHp = 0;
+      enterGameOver();
+    }
+  }
+
+  // ========= Items / Parts =========
+  function addPartWithColor(colorIndex) {
+    colorIndex = ((colorIndex|0) % PART_COLORS.length + PART_COLORS.length) % PART_COLORS.length;
+    const rFull = parts.right.length >= 3;
+    const lFull = parts.left.length >= 3;
+    if (rFull && lFull) return;
+
+    const newSlot = { colorIndex, hp: 1 };
+
+    if (parts.nextSide === "R") {
+      if (!rFull) { parts.right.push(newSlot); parts.nextSide = "L"; }
+      else { parts.left.push(newSlot); parts.nextSide = "R"; }
+    } else {
+      if (!lFull) { parts.left.push(newSlot); parts.nextSide = "R"; }
+      else { parts.right.push(newSlot); parts.nextSide = "L"; }
+    }
+  }
+
+  function spawnItemAt(worldPos, item) {
+    const s = worldToScreen(worldPos);
+    const x0 = clamp(s.x, 0.05, 0.95);
+    const y0 = clamp(s.y, -0.10, 1.10);
+
+    const width = clamp(num(ui.itemZigzagWidth, 0.33), 0.05, 1.0);
+    const half = width * 0.5;
+
+    const minX = clamp(x0 - half, 0.02, 0.98);
+    const maxX = clamp(x0 + half, 0.02, 0.98);
+
+    state.items.push({
+      type: item.type,
+      colorIndex: item.colorIndex ?? 0,
+      sx: x0,
+      sy: y0,
+      minX, maxX,
+      dir: Math.random() < 0.5 ? -1 : 1,
+      ttl: 18.0,
+    });
+  }
+
+  function dropOnLastSpawnDie(enemyWorldPos) {
+    // 골드 80%, 박스 20%
+    const r = Math.random();
+    if (r < 0.20) {
+      const colorIndex = nextBoxColor;
+      nextBoxColor = (nextBoxColor + 1) % PART_COLORS.length;
+      spawnItemAt(enemyWorldPos, { type: "box", colorIndex });
+    } else {
+      spawnItemAt(enemyWorldPos, { type: "gold" });
+    }
+  }
+
+  // ========= Spawning =========
+  function countAliveAndScheduled() {
+    return state.enemies.length + state.scheduledSpawns.length;
+  }
+  function canScheduleGroup(groupSize) {
+    return (countAliveAndScheduled() + groupSize) <= HARD_CAP;
+  }
+
+  function scheduleGroupSpawn(baseTime) {
+    if (state.gameOver) return false;
+    sanitizeInputs();
+
+    const groupSize = clamp(int(ui.groupSize, 7), 1, 20);
+    const gap = Math.max(0, num(ui.memberGap, 0.40));
+    if (!canScheduleGroup(groupSize)) { state.skippedGroups++; return false; }
+
+    const gid = state.nextGroupId++;
+    const c = CASES[Math.floor(Math.random() * CASES.length)];
+    const vpath = makePathFromCase(c);
+    state.lastCaseStr = `${c.s}->${c.v}->${c.e}`;
+
+    const speed = Math.max(0.001, num(ui.enemySpeed, 0.500));
+    for (let i=0;i<groupSize;i++){
+      state.scheduledSpawns.push({
+        t: baseTime + i*gap,
+        vpath, endSeg: c.e, speed,
+        groupId: gid,
+        spawnIndex: i,
+        groupSize
+      });
+    }
+    state.scheduledSpawns.sort((a,b)=>a.t-b.t);
+    return true;
+  }
+
+  function spawnEnemyFromSchedule(item) {
+    state.enemies.push({
+      hp: 1,
+      s: 0,
+      speed: item.speed,
+      vpath: item.vpath,
+      endSeg: item.endSeg,
+      x: item.vpath.start.x,
+      y: item.vpath.start.y,
+      r: num(ui.enemyR, 0.035),
+      exiting: false,
+      exitDir: null,
+      hasFired: false,
+
+      groupId: item.groupId,
+      isLastSpawn: (item.spawnIndex === item.groupSize - 1),
+      killedByPlayer: false,
+    });
+  }
+
+  // ========= Drawing helpers =========
+  function drawRectScreen(x0, y0, x1, y1, stroke, fill, dash=[]) {
+    const w = cssW(), h = cssH();
+    ctx.save();
+    if (fill) { ctx.fillStyle = fill; ctx.fillRect(x0*w, y0*h, (x1-x0)*w, (y1-y0)*h); }
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash(dash);
+    ctx.strokeRect(x0*w, y0*h, (x1-x0)*w, (y1-y0)*h);
+    ctx.restore();
+  }
+  function drawCircleScreen(x, y, r, fill, stroke=null) {
+    if (!finite(x) || !finite(y) || !finite(r)) return;
+    const w = cssW(), h = cssH();
+    const rad = r*Math.min(w,h);
+    if (!finite(rad) || rad <= 0) return;
+    ctx.beginPath();
+    ctx.arc(x*w, y*h, rad, 0, Math.PI*2);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.25; ctx.stroke(); }
+  }
+  function drawLineScreen(a, b, stroke, width=1, dash=[]) {
+    if (!finite(a.x)||!finite(a.y)||!finite(b.x)||!finite(b.y)) return;
+    const w = cssW(), h = cssH();
+    ctx.save();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(a.x*w, a.y*h);
+    ctx.lineTo(b.x*w, b.y*h);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawHeart(x, y, s, alpha=1.0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(0, 0.35);
+    ctx.bezierCurveTo(-0.5, -0.1, -0.9, 0.5, 0, 1.0);
+    ctx.bezierCurveTo(0.9, 0.5, 0.5, -0.1, 0, 0.35);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,120,160,1)";
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ========= Camera update =========
+  function updateCamera(dt) {
+    const edge = camera.edge;
+    let target = camera.x;
+
+    if (player.sx < edge) {
+      const t = (edge - player.sx) / edge;
+      target = camMin() * t;
+    } else if (player.sx > 1 - edge) {
+      const t = (player.sx - (1 - edge)) / edge;
+      target = camMax() * t;
+    } else {
+      target = 0;
+    }
+
+    const k = camera.followStrength;
+    const a = 1 - Math.exp(-k * dt);
+    camera.x = lerp(camera.x, clamp(target, camMin(), camMax()), a);
+  }
+
+  // ========= 파츠 피격 처리 =========
+  function damageAndMaybeRemovePart(hitPart) {
+    if (!hitPart) return;
+    const { side, index } = hitPart;
+
+    if (side === "R") {
+      const slot = parts.right[index];
+      if (!slot) return;
+      slot.hp -= 1;
+      if (slot.hp <= 0) parts.right.splice(index, 1);
+    } else {
+      const slot = parts.left[index];
+      if (!slot) return;
+      slot.hp -= 1;
+      if (slot.hp <= 0) parts.left.splice(index, 1);
+    }
+  }
+
+  // ========= Update =========
+  function update(dt) {
+    sanitizeInputs();
+
+    state.hurtCooldown = Math.max(0, state.hurtCooldown - dt);
+    state.respawnILeft = Math.max(0, state.respawnILeft - dt);
+
+    // camera 먼저 업데이트(클램프 계산에 필요)
+    updateCamera(dt);
+
+    // ✅ 파츠 포함 동적 클램프
+    clampPlayerWithParts();
+
+    // 무게감 이동
+    const lag = num(ui.follow, 0.70);
+    const base = clamp(1 - lag, 0.05, 1.0);
+    const alpha = 1 - Math.pow(1 - base, dt * 60);
+    player.sx = lerp(player.sx, player.tsx, alpha);
+    player.sy = lerp(player.sy, player.tsy, alpha);
+
+    // (이동 후에도 한번 더 안전 클램프)
+    clampPlayerWithParts();
+
+    if (state.gameOver) {
+      state.respawnCountdown -= dt;
+      if (state.respawnCountdown <= 0) respawnPlayer();
+    }
+
+    // player fire
+    weapon.cooldown -= dt;
+    const fireRate = Math.max(0.02, num(ui.playerFire, 0.12));
+    if (!state.gameOver && player.alive) {
+      if (weapon.cooldown <= 0) {
+        firePlayerBullets();
+        weapon.cooldown += fireRate;
+      }
+    } else {
+      if (weapon.cooldown < 0) weapon.cooldown = 0;
+    }
+
+    // group spawn
+    const groupInterval = Math.max(0.01, num(ui.groupInterval, 1.00));
+    if (!state.gameOver) {
+      state.groupAcc += dt;
+      while (state.groupAcc >= groupInterval) {
+        state.groupAcc -= groupInterval;
+        scheduleGroupSpawn(state.time);
+      }
+    }
+
+    while (state.scheduledSpawns.length > 0 && state.scheduledSpawns[0].t <= state.time) {
+      spawnEnemyFromSchedule(state.scheduledSpawns.shift());
+    }
+
+    // enemies
+    for (const e of state.enemies) {
+      if (!e) continue;
+      e.r = num(ui.enemyR, 0.035);
+
+      if (!e.exiting) {
+        const prevS = e.s;
+        e.s += e.speed * dt;
+
+        const p = e.vpath.posAtDist(e.s);
+        e.x = p.x; e.y = p.y;
+
+        if (!e.hasFired && !state.gameOver) {
+          if (prevS < e.vpath.viaDist && e.s >= e.vpath.viaDist) {
+            e.hasFired = true;
+            const from = { x: e.vpath.via.x, y: e.vpath.via.y };
+            const target = screenToWorld({ x: player.sx, y: player.sy });
+            fireEnemyBullet(from, target);
+          }
+        }
+
+        if (e.s >= e.vpath.totalLen) {
+          e.exiting = true;
+          e.exitDir = exitDirFromSeg(e.endSeg);
+        }
+      } else {
+        e.x += e.exitDir.x * e.speed * dt;
+        e.y += e.exitDir.y * e.speed * dt;
+      }
+    }
+
+    // move bullets
+    for (const b of state.pBullets) { if (!b) continue; b.ttl -= dt; b.y += b.vy * dt; b.x += b.vx * dt; }
+    for (const b of state.eBullets) { if (!b) continue; b.ttl -= dt; b.y += b.vy * dt; b.x += b.vx * dt; }
+
+    // move items (zigzag in screen-space)
+    const moveSpeed = Math.max(0.01, num(ui.itemMoveSpeed, 0.10));
+    const fallSpeed = Math.max(0.01, num(ui.itemFallSpeed, 0.10));
+    for (const it of state.items) {
+      if (!it) continue;
+      it.ttl -= dt;
+      it.sx += it.dir * moveSpeed * dt;
+      it.sy += fallSpeed * dt;
+      if (it.sx <= it.minX) { it.sx = it.minX; it.dir = 1; }
+      if (it.sx >= it.maxX) { it.sx = it.maxX; it.dir = -1; }
+    }
+
+    // -------- collisions: player bullets -> enemies
+    for (let i = state.pBullets.length - 1; i >= 0; i--) {
+      const b = state.pBullets[i];
+      if (!b) { state.pBullets.splice(i, 1); continue; }
+
+      let hit = false;
+      for (let j = state.enemies.length - 1; j >= 0; j--) {
+        const e = state.enemies[j];
+        if (!e) { state.enemies.splice(j, 1); continue; }
+
+        if (circleHit(b, b.r, e, e.r)) {
+          e.killedByPlayer = true;
+          e.hp -= (b.dmg ?? 1);
+          hit = true;
+
+          if (e.hp <= 0) {
+            if (e.isLastSpawn && e.killedByPlayer) dropOnLastSpawnDie({ x: e.x, y: e.y });
+            state.enemies.splice(j, 1);
+          }
+          break;
+        }
+      }
+      if (hit) state.pBullets.splice(i, 1);
+    }
+
+    // -------- collisions: enemy bullets -> parts 먼저, 그 다음 player
+    if (player.alive && !state.gameOver) {
+      const { coreW, coreR, rightPos, leftPos } = getCoreAndPartWorldPositions();
+      const partsAll = [...rightPos, ...leftPos];
+
+      // enemy bullets
+      for (let i = state.eBullets.length - 1; i >= 0; i--) {
+        const b = state.eBullets[i];
+        if (!b) { state.eBullets.splice(i, 1); continue; }
+
+        let consumed = false;
+
+        // 1) 파츠 먼저 체크: 맞으면 파츠 파괴 + 탄 제거, 본체 HP 영향 없음
+        for (let pIdx=0; pIdx<partsAll.length; pIdx++) {
+          const p = partsAll[pIdx];
+          if (circleHit(b, b.r, p, p.r)) {
+            state.eBullets.splice(i, 1);
+            damageAndMaybeRemovePart(p);
+            consumed = true;
+            break;
+          }
+        }
+        if (consumed) continue;
+
+        // 2) 본체 체크
+        if (circleHit(b, b.r, coreW, coreR)) {
+          state.eBullets.splice(i, 1);
+          applyPlayerHit();
+        }
+      }
+
+      // -------- collisions: enemy body -> parts 먼저, 그 다음 player
+      for (const e of state.enemies) {
+        if (!e) continue;
+
+        let hitPart = null;
+        for (let pIdx=0; pIdx<partsAll.length; pIdx++) {
+          const p = partsAll[pIdx];
+          if (circleHit(e, e.r, p, p.r)) { hitPart = p; break; }
+        }
+        if (hitPart) {
+          damageAndMaybeRemovePart(hitPart);
+          // 적은 그대로 진행 (기획에 "적도 죽는다"가 없어서)
+          continue;
+        }
+
+        if (circleHit(e, e.r, coreW, coreR)) {
+          applyPlayerHit();
+        }
+      }
+
+      // -------- item pickup: 본체 + 파츠 모두 가능
+      for (let i = state.items.length - 1; i >= 0; i--) {
+        const it = state.items[i];
+        if (!it) { state.items.splice(i, 1); continue; }
+        const iw = screenToWorld({ x: it.sx, y: it.sy });
+        const pickR = 0.020;
+
+        let picked = false;
+        if (circleHit(iw, pickR, coreW, coreR)) picked = true;
+        if (!picked) {
+          for (let pIdx=0; pIdx<partsAll.length; pIdx++) {
+            const p = partsAll[pIdx];
+            if (circleHit(iw, pickR, p, p.r)) { picked = true; break; }
+          }
+        }
+
+        if (picked) {
+          if (it.type === "gold") state.gold += 1;
+          if (it.type === "box") addPartWithColor(it.colorIndex ?? 0);
+          state.items.splice(i, 1);
+        }
+      }
+    }
+
+    // cleanup
+    state.enemies = state.enemies.filter(e =>
+      e && finite(e.x) && finite(e.y) && finite(e.s) && finite(e.speed) && !isOutsideActivity({x:e.x,y:e.y}, 0.10)
+    );
+    state.pBullets = state.pBullets.filter(b =>
+      b && finite(b.x) && finite(b.y) && finite(b.r) && b.ttl > 0 && !isOutsideActivity({x:b.x,y:b.y}, 0.60)
+    );
+    state.eBullets = state.eBullets.filter(b =>
+      b && finite(b.x) && finite(b.y) && finite(b.r) && b.ttl > 0 && !isOutsideActivity({x:b.x,y:b.y}, 0.60)
+    );
+    state.items = state.items.filter(it =>
+      it && finite(it.sx) && finite(it.sy) && it.ttl > 0 && it.sy < 1.25
+    );
+  }
+
+  // ========= Render =========
+  function render() {
+    const w = cssW(), h = cssH();
+    ctx.clearRect(0, 0, w, h);
+
+    // background (starfield)
+    drawSpaceBackground(w, h, state.bgTime);
+
+    const showDbg = ui.dbg.checked;
+
+    if (showDbg) {
+      drawRectScreen(0, 0, 1, 1, "rgba(255,255,120,.28)", null, []);
+      const dispMinS = worldToScreen({x: area.dispXMin, y:0}).x;
+      const dispMaxS = worldToScreen({x: area.dispXMax, y:0}).x;
+      drawRectScreen(dispMinS, area.dispYMin, dispMaxS, area.dispYMax, "rgba(120,255,120,.22)", "rgba(120,255,120,.02)", [6,4]);
+      const actMinS = worldToScreen({x: area.actXMin, y:0}).x;
+      const actMaxS = worldToScreen({x: area.actXMax, y:0}).x;
+      drawRectScreen(actMinS, area.actYMin, actMaxS, area.actYMax, "rgba(180,180,180,.18)", "rgba(180,180,180,.02)", [2,6]);
+    }
+
+    // GOLD (좌상단)
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillText(`GOLD: ${state.gold}`, 10, 10);
+    ctx.restore();
+
+    // hearts (우상단)
+    const hp = state.playerHp;
+    const heartSize = 14, gap = 22;
+    const baseX = w - 10 - gap*2;
+    const y = 10;
+    for (let i=0;i<3;i++){
+      const a = (i < hp) ? 1.0 : 0.2;
+      drawHeart(baseX + i*gap, y, heartSize, a);
+    }
+
+    // countdown
+    if (state.gameOver && state.respawnCountdown > 0) {
+      const n = Math.ceil(state.respawnCountdown);
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,.35)";
+      ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      ctx.font = "bold 96px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(n), w/2, h/2);
+      ctx.restore();
+    }
+
+    // player + parts
+    if (player.alive) {
+      const { coreW, coreR, rightPos, leftPos, partR } = getCoreAndPartWorldPositions();
+      const coreS = worldToScreen(coreW);
+
+      const fill = (state.respawnILeft > 0) ? "rgba(120,220,255,.55)" : "rgba(120,220,255,.95)";
+      drawCircleScreen(coreS.x, coreS.y, coreR, fill, "rgba(255,255,255,.25)");
+      drawLineScreen({x: coreS.x, y: coreS.y}, {x: coreS.x, y: coreS.y - 0.05}, "rgba(120,220,255,.55)", 2);
+
+      for (const p of rightPos) {
+        const ps = worldToScreen(p);
+        const col = PART_COLORS[p.slot?.colorIndex ?? 0] || "#ffffff";
+        drawCircleScreen(ps.x, ps.y, partR, col, "rgba(255,255,255,.18)");
+      }
+      for (const p of leftPos) {
+        const ps = worldToScreen(p);
+        const col = PART_COLORS[p.slot?.colorIndex ?? 0] || "#ffffff";
+        drawCircleScreen(ps.x, ps.y, partR, col, "rgba(255,255,255,.18)");
+      }
+    }
+
+    // bullets
+    for (const b of state.pBullets) {
+      if (!b) continue;
+      const s = worldToScreen(b);
+      drawCircleScreen(s.x, s.y, b.r, "rgba(255,255,255,.90)");
+    }
+    for (const b of state.eBullets) {
+      if (!b) continue;
+      const s = worldToScreen(b);
+      drawCircleScreen(s.x, s.y, b.r, "rgba(255,140,140,.90)");
+    }
+
+    // items
+    for (const it of state.items) {
+      if (!it) continue;
+      if (it.type === "gold") {
+        drawCircleScreen(it.sx, it.sy, 0.014, "rgba(255,210,80,.95)", "rgba(255,255,255,.12)");
+      } else {
+        const ww = cssW(), hh = cssH();
+        const size = 0.030 * Math.min(ww, hh);
+        const x = it.sx * ww, yy = it.sy * hh;
+        const col = PART_COLORS[it.colorIndex ?? 0] || "rgba(190,230,255,.85)";
+        ctx.save();
+        ctx.fillStyle = col;
+        ctx.strokeStyle = "rgba(255,255,255,.20)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.rect(x - size/2, yy - size/2, size, size);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // enemies + debug path
+    for (const e of state.enemies) {
+      if (!e || !finite(e.x) || !finite(e.y)) continue;
+      const es = worldToScreen({x:e.x,y:e.y});
+
+      if (showDbg) {
+        const pts = e.vpath.pts;
+        for (let i=1;i<pts.length;i++){
+          const a = worldToScreen(pts[i-1]);
+          const b = worldToScreen(pts[i]);
+          drawLineScreen(a, b, "rgba(255,255,255,.08)", 1);
+        }
+        const vs = worldToScreen(e.vpath.via);
+        drawCircleScreen(vs.x, vs.y, 0.008, "rgba(255,255,255,.10)", "rgba(255,255,255,.12)");
+      }
+
+      const fill = e.isLastSpawn ? "rgba(255,170,90,.98)" : "rgba(255,200,120,.95)";
+      const stroke = e.isLastSpawn ? "rgba(255,255,255,.28)" : "rgba(255,255,255,.18)";
+      drawCircleScreen(es.x, es.y, e.r, fill, stroke);
+    }
+
+    // error overlay
+    if (err.time > 0) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255,0,80,.18)";
+      ctx.fillRect(0, h-90, w, 90);
+      ctx.fillStyle = "rgba(255,220,240,.95)";
+      ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("RUNTIME ERROR (loop continued):", 10, h-84);
+      ctx.fillText(err.msg.slice(0, 140), 10, h-64);
+      ctx.restore();
+    }
+  }
+
+  // ========= Control =========
+  function reset() {
+    state.enemies.length = 0;
+    state.pBullets.length = 0;
+    state.eBullets.length = 0;
+    state.items.length = 0;
+    state.scheduledSpawns.length = 0;
+
+    state.time = 0;
+    state.groupAcc = 0;
+    state.skippedGroups = 0;
+    state.lastCaseStr = "-";
+    state.nextGroupId = 1;
+
+    state.playerHp = 3;
+    state.gameOver = false;
+    state.respawnCountdown = 0;
+    state.respawnILeft = 0;
+    state.hurtCooldown = 0;
+
+    state.gold = 0;
+
+    resetParts();
+    nextBoxColor = 0;
+
+    recomputeAreas();
+    camera.x = clamp(0, camMin(), camMax());
+
+    player.sx = 0.5; player.sy = 0.82;
+    player.tsx = 0.5; player.tsy = 0.82;
+    player.alive = true;
+
+    weapon.cooldown = 0;
+    setDragState(false);
+
+    scheduleGroupSpawn(0);
+  }
+
+  
+
+  function isPanelOpen(){ return !panelEl.classList.contains("closed"); }
+  function setPanelOpen(open){
+    panelEl.classList.toggle("closed", !open);
+    // Panel open/close replaces pause/resume.
+    state.paused = open;
+    if (open) setDragState(false);
+  }
+  // Default: panel closed (paused = false)
+  setPanelOpen(false);
+  panelTab.addEventListener("click", () => setPanelOpen(!isPanelOpen()));
+
+
+
+  // ========= Main Loop =========
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
+
+
+    // background time always advances (keeps moving on game over / pause)
+    state.bgTime += dt;
+
+    try {
+      if (!state.paused) {
+        state.time += dt;
+        update(dt);
+      }
+      if (err.time > 0) err.time = Math.max(0, err.time - dt);
+      render();
+
+      ui.gold.textContent = String(state.gold);
+      ui.pHp.textContent = String(state.playerHp);
+      ui.enemyCount.textContent = String(state.enemies.length);
+      ui.scheduledCount.textContent = String(state.scheduledSpawns.length);
+      ui.bulletCount.textContent = String(state.pBullets.length);
+      ui.ebulletCount.textContent = String(state.eBullets.length);
+      ui.itemCount.textContent = String(state.items.length);
+      ui.parts.textContent = `${parts.right.length}/${parts.left.length}`;
+      ui.skipped.textContent = String(state.skippedGroups);
+      ui.camX.textContent = camera.x.toFixed(2);
+      ui.lastCase.textContent = state.lastCaseStr;
+
+      state._fpsAcc += dt;
+      state._fpsFrames++;
+      if (state._fpsAcc >= 0.5) {
+        state.fps = Math.round(state._fpsFrames / state._fpsAcc);
+        ui.fps.textContent = String(state.fps);
+        state._fpsAcc = 0;
+        state._fpsFrames = 0;
+      }
+    } catch (e) {
+      setErr(e);
+    }
+  }
+
+  // start
+  recomputeAreas();
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
