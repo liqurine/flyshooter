@@ -125,13 +125,70 @@ canvas { display:block; background:#050812; border:1px solid rgba(255,255,255,.1
     input[type="number"]::-webkit-outer-spin-button,
     input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
-  </style>
+  
+/* Start / GameOver overlay (menu) */
+#startOverlay{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  pointer-events:auto;
+  z-index: 15; /* below panel (#ui z=20) and tab (30) */
+}
+#startOverlay .card{
+  pointer-events:auto;
+  min-width: 220px;
+  max-width: min(360px, 86%);
+  padding: 18px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(10,14,22,.70);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align:center;
+  box-shadow: 0 18px 60px rgba(0,0,0,.55);
+}
+#startOverlay .title{
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  margin: 2px 0 10px;
+}
+#startOverlay .sub{
+  font-size: 12px;
+  opacity: .85;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+#startOverlay .playBtn{
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 900;
+  background: rgba(46,120,255,.96);
+  border: 1px solid rgba(255,255,255,.28);
+}
+#startOverlay .playBtn:hover{ background: rgba(46,120,255,1); }
+#startOverlay .playBtn:disabled{ opacity:.45; cursor:not-allowed; }
+
+</style>
 </head>
 <body>
 <div id="wrap">
   <div id="left"><div id="gameArea">
     <canvas id="c"></canvas>
-    <div id="ui" class="closed">
+    
+    <div id="startOverlay" aria-live="polite">
+      <div class="card">
+        <div class="title" id="startTitle">PLAY</div>
+        <div class="sub" id="startSub">드래그로 이동 · 자동 발사</div>
+        <button class="playBtn" id="playBtn">플레이</button>
+      </div>
+    </div>
+
+<div id="ui" class="closed">
 
     <h2>화면/영역 크기(수기 입력)</h2>
     <div class="hint">폭/높이(px). 내부 계산은 유저 화면(1.0) 기준 정규화.</div>
@@ -474,6 +531,11 @@ function drawSpaceBackground(w, h, t) {
   const panelTab = document.getElementById("panelTab");
 
 
+
+  const startOverlay = document.getElementById("startOverlay");
+  const playBtn = document.getElementById("playBtn");
+  const startTitle = document.getElementById("startTitle");
+  const startSub = document.getElementById("startSub");
   // input 중간상태 보호 (소수 입력 튐 방지)
   const num = (el, fallback) => {
     const s = String(el.value ?? "").trim();
@@ -786,6 +848,9 @@ function drawSpaceBackground(w, h, t) {
     time: 0,
     paused: false,
 
+    // game flow
+    mode: "menu", // menu | playing | gameover
+    gameOverTimer: 0,
     // background time (always advances; continues on game over / pause)
     bgTime: 0,
 
@@ -976,23 +1041,28 @@ function drawSpaceBackground(w, h, t) {
     parts.nextSide = "R";
   }
 
-  function enterGameOver() {
-    state.gameOver = true;
-    state.respawnCountdown = 3.0;
+  
+function enterGameOver() {
+  state.gameOver = true;
+  state.mode = "gameover";
+  state.gameOverTimer = 0;
 
-    state.pBullets.length = 0;
-    state.eBullets.length = 0;
-    state.items.length = 0;
-    state.scheduledSpawns.length = 0;
-    state.groupAcc = 0;
+  state.pBullets.length = 0;
+  state.eBullets.length = 0;
+  state.items.length = 0;
+  state.scheduledSpawns.length = 0;
+  state.groupAcc = 0;
 
-    // ✅ 게임오버 시 파츠 리셋
-    resetParts();
+  // ✅ 게임오버 시 파츠 리셋
+  resetParts();
 
-    player.alive = false;
-  }
+  player.alive = false;
 
-  function respawnPlayer() {
+  // show overlay immediately with GameOver, play button appears after 3s
+  updateStartOverlay();
+}
+
+function respawnPlayer() {
     player.sx = 0.5; player.sy = 0.84;
     player.tsx = player.sx; player.tsy = player.sy;
     state.playerHp = 3;
@@ -1238,11 +1308,6 @@ function drawSpaceBackground(w, h, t) {
     // (이동 후에도 한번 더 안전 클램프)
     clampPlayerWithParts();
 
-    if (state.gameOver) {
-      state.respawnCountdown -= dt;
-      if (state.respawnCountdown <= 0) respawnPlayer();
-    }
-
     // player fire
     weapon.cooldown -= dt;
     const fireRate = Math.max(0.02, num(ui.playerFire, 0.12));
@@ -1470,19 +1535,19 @@ function drawSpaceBackground(w, h, t) {
       drawHeart(baseX + i*gap, y, heartSize, a);
     }
 
-    // countdown
-    if (state.gameOver && state.respawnCountdown > 0) {
-      const n = Math.ceil(state.respawnCountdown);
+    // gameover overlay text (no countdown)
+    if (state.mode === "gameover") {
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,.35)";
       ctx.fillRect(0,0,w,h);
-      ctx.fillStyle = "rgba(255,255,255,.92)";
-      ctx.font = "bold 96px system-ui";
+      ctx.fillStyle = "rgba(255,255,255,.94)";
+      ctx.font = "900 44px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(n), w/2, h/2);
+      ctx.fillText("GameOver", w/2, h/2);
       ctx.restore();
     }
+
 
     // player + parts
     if (player.alive) {
@@ -1576,7 +1641,7 @@ function drawSpaceBackground(w, h, t) {
   }
 
   // ========= Control =========
-  function reset() {
+  function resetGameState() {
     state.enemies.length = 0;
     state.pBullets.length = 0;
     state.eBullets.length = 0;
@@ -1610,17 +1675,74 @@ function drawSpaceBackground(w, h, t) {
     weapon.cooldown = 0;
     setDragState(false);
 
-    scheduleGroupSpawn(0);
+
+    // flow
+    state.mode = "menu";
+    state.gameOver = false;
+    state.gameOverTimer = 0;
+    state.paused = false;
+
+    updateStartOverlay();
   }
 
   
 
-  function isPanelOpen(){ return !panelEl.classList.contains("closed"); }
+  
+  function updateStartOverlay(){
+    if (!startOverlay) return;
+    if (state.mode === "playing") {
+      startOverlay.style.display = "none";
+      return;
+    }
+    startOverlay.style.display = "flex";
+
+    if (state.mode === "menu") {
+      startTitle.textContent = "PLAY";
+      startSub.textContent = "드래그로 이동 · 자동 발사";
+      playBtn.style.display = "inline-block";
+      playBtn.disabled = false;
+      playBtn.textContent = "플레이";
+      return;
+    }
+
+    // gameover
+    startTitle.textContent = "GameOver";
+    const remain = Math.max(0, 3 - state.gameOverTimer);
+    if (state.gameOverTimer < 3) {
+      startSub.textContent = `잠시 후 다시 플레이할 수 있어요. (${Math.ceil(remain)})`;
+      playBtn.style.display = "inline-block";
+      playBtn.disabled = true;
+      playBtn.textContent = "잠시만…";
+    } else {
+      startSub.textContent = "다시 시작하려면 플레이를 누르세요.";
+      playBtn.style.display = "inline-block";
+      playBtn.disabled = false;
+      playBtn.textContent = "플레이";
+    }
+  }
+
+  function startNewGame(){
+    // Always start fresh (A안)
+    setPanelOpen(false);
+    resetGameState();
+
+    state.mode = "playing";
+    state.gameOver = false;
+    state.gameOverTimer = 0;
+    player.alive = true;
+    weapon.cooldown = 0;
+
+    // first group immediately
+    scheduleGroupSpawn(0);
+
+    updateStartOverlay();
+  }
+
+function isPanelOpen(){ return !panelEl.classList.contains("closed"); }
   function setPanelOpen(open){
     panelEl.classList.toggle("closed", !open);
     // Panel open/close replaces pause/resume.
-    state.paused = open;
-    if (open) setDragState(false);
+    state.paused = (state.mode === "playing") ? open : false;if (open) setDragState(false);
   }
   // Default: panel closed (paused = false)
   setPanelOpen(false);
@@ -1628,6 +1750,12 @@ function drawSpaceBackground(w, h, t) {
 
 
 
+
+
+  if (playBtn) playBtn.addEventListener("click", () => {
+    if (state.mode === "gameover" && state.gameOverTimer < 3) return;
+    startNewGame();
+  });
   // ========= Main Loop =========
   let last = performance.now();
   function loop(now) {
@@ -1640,11 +1768,13 @@ function drawSpaceBackground(w, h, t) {
     // background time always advances (keeps moving on game over / pause)
     state.bgTime += dt;
 
+
+    if (state.mode === "gameover") {
+      state.gameOverTimer += dt;
+      updateStartOverlay();
+    }
     try {
-      if (!state.paused) {
-        state.time += dt;
-        update(dt);
-      }
+      if (state.mode === "playing" && !state.paused) { state.time += dt; update(dt); }
       if (err.time > 0) err.time = Math.max(0, err.time - dt);
       render();
 
@@ -1675,7 +1805,8 @@ function drawSpaceBackground(w, h, t) {
 
   // start
   recomputeAreas();
-  reset();
+  resetGameState();
+  updateStartOverlay();
   requestAnimationFrame(loop);
 })();
 </script>
