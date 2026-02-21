@@ -190,50 +190,6 @@ canvas { display:block; background:#050812; border:1px solid rgba(255,255,255,.1
 
 <div id="ui" class="closed">
 
-    <h2>화면/영역 크기(수기 입력)</h2>
-    <div class="hint">폭/높이(px). 내부 계산은 유저 화면(1.0) 기준 정규화.</div>
-
-    <div class="row">
-      <label>1) 유저 화면 (W×H)</label>
-      <div class="pair">
-        <input id="userW" class="short" type="number" step="1" min="100" value="1080" />
-        <input id="userH" class="short" type="number" step="1" min="100" value="1920" />
-      </div>
-    </div>
-
-    <div class="row">
-      <label>2) 디스플레이 가능 (W×H)</label>
-      <div class="pair">
-        <input id="dispW" class="short" type="number" step="1" min="100" value="1280" />
-        <input id="dispH" class="short" type="number" step="1" min="100" value="1920" />
-      </div>
-    </div>
-
-    <div class="row">
-      <label>3) 적기 활동 가능 (W×H)</label>
-      <div class="pair">
-        <input id="actW" class="short" type="number" step="1" min="100" value="1480" />
-        <input id="actH" class="short" type="number" step="1" min="100" value="2120" />
-      </div>
-    </div>
-
-    <div class="row">
-      <label>하단(C1,D1) 출현 구역 범위 (0~1)</label>
-      <input id="bottomSpawnRange" type="number" step="0.01" min="0" max="1" value="0.50" />
-    </div>
-
-    <div class="row">
-      <button id="applyArea">영역 적용</button>
-
-      </div>
-
-    <div class="row">
-      <label>디버그 오버레이</label>
-      <input id="dbg" type="checkbox" />
-    </div>
-
-    <hr />
-
     <h2>조작/스폰</h2>
     <div class="row">
       <label>드래그 딜레이(무게감) (0~0.95)</label>
@@ -483,15 +439,6 @@ function drawSpaceBackground(w, h, t) {
 
   // ========= UI =========
   const ui = {
-    dbg: document.getElementById("dbg"),
-    userW: document.getElementById("userW"),
-    userH: document.getElementById("userH"),
-    dispW: document.getElementById("dispW"),
-    dispH: document.getElementById("dispH"),
-    actW: document.getElementById("actW"),
-    actH: document.getElementById("actH"),
-    bottomSpawnRange: document.getElementById("bottomSpawnRange"),
-    applyArea: document.getElementById("applyArea"),
     reset: document.getElementById("reset"),
     spawnGroup: document.getElementById("spawnGroup"),
     follow: document.getElementById("follow"),
@@ -571,24 +518,13 @@ function drawSpaceBackground(w, h, t) {
     ui.itemZigzagWidth.value = clamp(num(ui.itemZigzagWidth, 0.33), 0.05, 1.0).toFixed(2);
     ui.itemFallSpeed.value = Math.max(0.01, num(ui.itemFallSpeed, 0.10)).toFixed(2);
     ui.itemMoveSpeed.value = Math.max(0.01, num(ui.itemMoveSpeed, 0.10)).toFixed(2);
-
-    ui.bottomSpawnRange.value = clamp(num(ui.bottomSpawnRange, 0.50), 0, 1).toFixed(2);
-
-    ui.userW.value = Math.max(100, int(ui.userW, 1080));
-    ui.userH.value = Math.max(100, int(ui.userH, 1920));
-    ui.dispW.value = Math.max(100, int(ui.dispW, 1280));
-    ui.dispH.value = Math.max(100, int(ui.dispH, 1920));
-    ui.actW.value  = Math.max(100, int(ui.actW, 1480));
-    ui.actH.value  = Math.max(100, int(ui.actH, 2120));
-  }
+}
 
   // ✅ blur/change/enter에서만 포맷 확정 (소수 입력 문제 해결)
   const LIVE_KEYS = [
     "follow","groupInterval","memberGap","groupSize","enemySpeed","bias","curveSamples",
     "playerR","enemyR","playerFire","enemyBulletSpeed","hurtCD","respawnIFrames","partGap",
-    "itemZigzagWidth","itemFallSpeed","itemMoveSpeed",
-    "bottomSpawnRange",
-    "userW","userH","dispW","dispH","actW","actH"
+    "itemZigzagWidth","itemFallSpeed","itemMoveSpeed"
   ];
   for (const k of LIVE_KEYS) {
     ui[k].addEventListener("change", sanitizeInputs);
@@ -628,35 +564,32 @@ function drawSpaceBackground(w, h, t) {
   function worldToScreen(p) { return { x: p.x - camera.x, y: p.y }; }
   function screenToWorld(p) { return { x: p.x + camera.x, y: p.y }; }
 
-  function recomputeAreas() {
-    sanitizeInputs();
-    const userW = int(ui.userW, 1080);
-    const userH = int(ui.userH, 1920);
-    const dispW = int(ui.dispW, 1280);
-    const dispH = int(ui.dispH, 1920);
-    const actW  = int(ui.actW, 1480);
-    const actH  = int(ui.actH, 2120);
+  
+function recomputeAreas() {
+  // 화면/영역 크기 UI 제거됨 → 고정 값 사용 (원래 기본값)
+  const userW = 1080, userH = 1920;
+  const dispW = 1280, dispH = 1920;
+  const actW  = 1480, actH  = 2120;
 
-    const rxDisp = dispW / userW;
-    const ryDisp = dispH / userH;
-    const rxAct  = actW  / userW;
-    const ryAct  = actH  / userH;
+  const rxDisp = dispW / userW;
+  const ryDisp = dispH / userH;
+  const rxAct  = actW  / userW;
+  const ryAct  = actH  / userH;
 
-    const dx = (rxDisp - 1) * 0.5;
-    const dy = (ryDisp - 1) * 0.5;
-    area.dispXMin = 0 - dx; area.dispXMax = 1 + dx;
-    area.dispYMin = 0 - dy; area.dispYMax = 1 + dy;
+  const dx = (rxDisp - 1) * 0.5;
+  const dy = (ryDisp - 1) * 0.5;
+  area.dispXMin = 0 - dx; area.dispXMax = 1 + dx;
+  area.dispYMin = 0 - dy; area.dispYMax = 1 + dy;
 
-    const ax = (rxAct - 1) * 0.5;
-    const ay = (ryAct - 1) * 0.5;
-    area.actXMin = 0 - ax; area.actXMax = 1 + ax;
-    area.actYMin = 0 - ay; area.actYMax = 1 + ay;
+  const ax = (rxAct - 1) * 0.5;
+  const ay = (ryAct - 1) * 0.5;
+  area.actXMin = 0 - ax; area.actXMax = 1 + ax;
+  area.actYMin = 0 - ay; area.actYMax = 1 + ay;
 
-    camera.x = clamp(camera.x, camMin(), camMax());
-  }
-  ui.applyArea.addEventListener("click", recomputeAreas);
+  camera.x = clamp(camera.x, camMin(), camMax());
+}
 
-  // ========= 48 CASES =========
+// ========= 48 CASES =========
   const CASES = [
     {s:"A1", v:"C", e:"A1"}, {s:"A1", v:"C", e:"B1"}, {s:"A1", v:"C", e:"B2"}, {s:"A1", v:"C", e:"D1"},
     {s:"A1", v:"D", e:"A1"}, {s:"A1", v:"D", e:"A2"}, {s:"A1", v:"D", e:"C1"}, {s:"A1", v:"D", e:"B1"},
@@ -683,8 +616,8 @@ function drawSpaceBackground(w, h, t) {
     const sy = splitY();
 
     if (opts && opts.isSpawn && (seg === "C1" || seg === "D1")) {
-      const r = clamp(num(ui.bottomSpawnRange, 0.50), 0, 1);
-      t = t * r;
+      const r = 0.50;
+t = t * r;
     }
 
     switch(seg){
@@ -1504,7 +1437,7 @@ function respawnPlayer() {
     // background (starfield)
     drawSpaceBackground(w, h, state.bgTime);
 
-    const showDbg = ui.dbg.checked;
+    const showDbg = false;
 
     if (showDbg) {
       drawRectScreen(0, 0, 1, 1, "rgba(255,255,120,.28)", null, []);
